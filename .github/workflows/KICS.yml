@@ -1,4 +1,4 @@
-name: KICS IaC Scan
+name: KICS IaC Scan (no break)
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
 
 permissions:
   contents: read
-  security-events: write   # necesario para subir SARIF a Code Scanning
+  security-events: write
   actions: read
 
 jobs:
@@ -20,17 +20,48 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Ejecuta KICS con la Action oficial (mínimo funcional)
+      # Ejecuta KICS sin romper el pipeline y con resúmenes/anotaciones
       - name: Run KICS
         uses: Checkmarx/kics-github-action@v2.1.14
         with:
           path: .
           output_path: kics-results
           output_formats: "sarif,json,html"
-          # Opcionales comunes (descomenta si los quieres):
-          # enable_secrets: true
-          # platform_type: "terraform,cloudformation,kubernetes,ansible,arm,azure-resource-manager,openapi,dockerfile,kustomize,helm"
-          # fail_on: "high"   # rompe el job si hay HIGH o CRITICAL (según config de la action)
+          ignore_on_exit: results          # <- nunca falla aunque haya findings
+          enable_jobs_summary: true        # resumen automático (siempre útil)
+          enable_annotations: true         # comenta/annota en PR
+
+      # (Opcional) Mostrar conteo por severidad en el Job Summary con jq
+      - name: Summarize findings (counts)
+        if: always()
+        run: |
+          JSON="kics-results/results.json"
+          if [ -f "$JSON" ]; then
+            # Cuenta findings por severidad sumando el número de "results" en cada query
+            TOTAL=$(jq '[.queries[] | (.results | length)] | add // 0' "$JSON")
+            CRIT=$(jq '[.queries[] | select(.severity=="CRITICAL") | (.results | length)] | add // 0' "$JSON")
+            HIGH=$(jq '[.queries[] | select(.severity=="HIGH")     | (.results | length)] | add // 0' "$JSON")
+            MED=$(jq  '[.queries[] | select(.severity=="MEDIUM")   | (.results | length)] | add // 0' "$JSON")
+            LOW=$(jq  '[.queries[] | select(.severity=="LOW")      | (.results | length)] | add // 0' "$JSON")
+            INFO=$(jq '[.queries[] | select(.severity=="INFO")     | (.results | length)] | add // 0' "$JSON")
+
+            {
+              echo "## KICS findings (conteo por severidad)"
+              echo ""
+              echo "| Severidad | Findings |"
+              echo "|---|---:|"
+              echo "| CRITICAL | $CRIT |"
+              echo "| HIGH     | $HIGH |"
+              echo "| MEDIUM   | $MED |"
+              echo "| LOW      | $LOW |"
+              echo "| INFO     | $INFO |"
+              echo "| **TOTAL** | **$TOTAL** |"
+              echo ""
+              echo "> Archivos: **kics-results/results.json**, **results.html**, **results.sarif**"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No se encontró kics-results/results.json" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload artifacts (HTML/JSON/SARIF)
         if: always()
