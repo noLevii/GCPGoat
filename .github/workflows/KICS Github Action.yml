@@ -1,2 +1,0 @@
-- name: KICS Github Action
-  uses: Checkmarx/kics-github-action@v2.1.14

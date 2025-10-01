@@ -1,0 +1,46 @@
+name: KICS IaC Scan
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write   # necesario para subir SARIF a Code Scanning
+  actions: read
+
+jobs:
+  kics:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Ejecuta KICS con la Action oficial (mínimo funcional)
+      - name: Run KICS
+        uses: Checkmarx/kics-github-action@v2.1.14
+        with:
+          path: .
+          output_path: kics-results
+          output_formats: "sarif,json,html"
+          # Opcionales comunes (descomenta si los quieres):
+          # enable_secrets: true
+          # platform_type: "terraform,cloudformation,kubernetes,ansible,arm,azure-resource-manager,openapi,dockerfile,kustomize,helm"
+          # fail_on: "high"   # rompe el job si hay HIGH o CRITICAL (según config de la action)
+
+      - name: Upload artifacts (HTML/JSON/SARIF)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kics-results
+          path: kics-results/*
+
+      - name: Upload SARIF to GitHub Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: kics-results/results.sarif
